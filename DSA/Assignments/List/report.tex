@@ -1,0 +1,485 @@
+\documentclass[fontset=fandol]{ctexart}  
+\usepackage{geometry}  
+\geometry{margin=1.5cm, vmargin={0pt,1cm}}  
+\setlength{\topmargin}{-1cm}  
+\setlength{\paperheight}{29.7cm}  
+\setlength{\textheight}{25.3cm}  
+  
+\usepackage{xcolor}  % 使用 xcolor 而非 color  
+\usepackage{listings}  
+  
+% 设置代码样式  
+\lstset{  
+    basicstyle=\ttfamily\small,  
+    keywordstyle=\color{black},  
+    commentstyle=\color{gray},  
+    stringstyle=\color{red},  
+    numbers=left,  
+    numberstyle=\tiny\color{gray},  
+    stepnumber=1,  
+    numbersep=10pt,  
+    backgroundcolor=\color{white},  
+    showspaces=false,  
+    showstringspaces=false,  
+    frame=single,  
+    rulecolor=\color{black},  
+    tabsize=4,  
+    captionpos=b,  
+    breaklines=true,  
+    breakatwhitespace=false,  
+    escapeinside={(*@}{@*)}  % 更改逃逸字符设置  
+}  
+  
+\title{List 类的改进与测试报告}  
+\author{陈汉铮}  
+\date{\today}  
+  
+\begin{document}  
+  
+\maketitle  
+  
+\section{List.h 结构的完善}  
+\subsection{增加 const\_iterator 和 iterator 的 operator--} 
+根据文件"List.h"我们发现pop\_back()实现依赖于递减运算符"--"，pop\_back()的具体代码如下：
+
+\begin{lstlisting}[language=C++, caption={pop\_back}]  
+/** 
+     * @brief 删除 List 的最后一个数据节点.
+     * 
+     */
+    void pop_back()
+    {
+        erase(--end());
+    } 
+\end{lstlisting}
+
+
+为了确保 pop\_back() 函数的实现，我们在 const\_iterator 和 iterator 中添加了递减运算符"--"。这允许迭代器向列表的前端移动，是 pop\_back() 函数能够正确执行的关键。以下是operator --的具体代码：  
+  
+\begin{lstlisting}[language=C++, caption={const\_iterator的前置自减运算符实现}]  
+/**  
+ * @brief 迭代器的前置自减运算符。用于将迭代器指向前一节点  
+ *  
+ * @return const_iterator 上一个节点的迭代器  
+ */  
+const_iterator &operator--()  
+{  
+    current = current->prev;  
+    return *this;  
+}  
+\end{lstlisting}
+
+
+\begin{lstlisting}[language=C++, caption={iterator的前置自减运算符实现}]  
+/**
+ * @brief 迭代器的前置自减运算符. 用于将迭代器指向上一个节点.
+ *
+ * @return iterator& 上一个节点的迭代器.
+ */
+iterator &operator--()
+{
+    this->current = this->current->prev;
+    return *this;
+}  
+\end{lstlisting}
+
+以及相应的后置自减运算符，具体代码如下：
+
+\begin{lstlisting}[language=C++, caption={const\_iterator的后置自减运算符实现}]  
+/**
+ * @brief 迭代器的后置自减运算符。用于将迭代器指向前一节点
+ * 
+ * @return const_iterator 上一个节点的迭代器
+ */
+const_iterator operator--(int)
+{
+    const_iterator old = *this;
+    --(*this);
+    return old;
+}  
+\end{lstlisting}
+
+\begin{lstlisting}[language=C++, caption={iterator的后置自减运算符实现}]  
+/**
+ * @brief 迭代器的后置自减运算符。用于将迭代器指向前一节点
+ * 
+ * @return iterator 上一个节点的迭代器
+ */
+iterator operator--(int)
+{
+    iterator old = *this;
+    ++(*this);
+    return old;
+} 
+\end{lstlisting}
+至此，pop\_back函数中第七行代码"erase(--end());"得以实现，相应的功能也得以实现
+  
+\subsection{完善 erase 和 clear 函数}  
+我们对 erase(iterator from, iterator to) 函数进行了改进，使其能够更高效地处理元素范围的删除。接下来，我们简写 erase(iterator from, iterator to) 为 erase(from,to),erase(iterator itr) 为 erase(itr)。
+
+改善过后代码如下（包括原本代码）：
+
+\begin{lstlisting}[language=C++, caption={erase(iterator from, iterator to)函数}]  
+iterator erase(iterator from, iterator to)
+{
+    /// 这里其实就是重复调用了单个节点删除的 erase 函数.
+    /// 因此这个内循环和外部循环完全一致. 
+    /// 这里可以做适当的优化么?
+    //for( iterator itr = from; itr != to; )
+    //    itr = erase( itr );
+    //return to;
+    if (from == to) return to;  // 如果范围为空，直接返回    
+    Node* start = from.current;    
+    
+    Node* end = to.current;    
+    
+    if (!start || start == tail) return iterator(end);  // 额外的检查，确保不会操作尾部之后的元素    
+    
+    start->prev->next = end;    
+    if (end) // 确保 end 不是 nullptr
+    {      
+        end->prev = start->prev;    
+    }    
+    
+    while (start != end) 
+    {    
+        Node* next = start->next;    
+        delete start;    
+        start = next;    
+        theSize--;    
+    }    
+    return iterator(end);  
+}  
+\end{lstlisting}
+课堂上给出的erase(iterator from, iterator to) 函数是基于erase(iterator itr)这个函数实现的,这也是最直接的思想。然而我的改进的思路为：首先，利用链表的性质，直接将from所指节点和to所指的节点连接。再将中间的迭代器一一删除。
+
+观察代码可以发现，虽然每一次 erase(itr) 不需要单独处理边界条件，但如果要删除多个连续节点，单独调用 erase(itr) 将导致多次不必要的链接更新。例如，如果删除一个范围内的所有节点，使用 erase(from, to) 只需要在操作的开始和结束时更新一次链接，而使用多次 erase(itr) 则每删除一个节点都需要更新链接，这在处理大量数据时效率较低。
+
+在完善erase(from,to)这个函数之后，笔者发现即使实现了该函数的优化，但该函数却并没有实际的用处在原本的类内。个人认为这是价值的剩余。于是，笔者首先希望利用该函数对内部其他函数进行优化，遂发现了 clear() 这个函数，一下是原本的代码：
+
+\begin{lstlisting}[language=C++, caption={clear() origin version}]  
+void clear() {  
+    while (!empty()) {  
+        pop_front();  
+    }  
+} 
+\end{lstlisting}
+其中 pop\_front() 函数的实现是基于 erase(itr) 的实现。然而根据 clear() 函数的意义，显然是希望删除list中除了首尾节点以外的节点，本质上是一个范围。于是，笔者将 clear() 函数进行了改善，提高了代码实现的效率和简洁性，代码如下：
+
+\begin{lstlisting}[language=C++, caption={clear() new version}]  
+/**
+ * @brief 清空 List 中的数据.
+ * 
+ */
+void clear()
+{
+    if(!empty()) erase(begin(),end());//erase()函数内已经判断list是不是空的情况了
+    //用erase(from,to)?
+}
+\end{lstlisting}
+
+至此，笔者对原本的List.h的完善和优化已经结束，接下来介绍笔者增加的操作和功能。
+
+\section{List.h 中链表操作的增加}  
+为 List 类增加了三个新的功能，分别为printlist(), reverse() 和 remove\_all() 函数，这些功能增强了 List 类处理数据的能力。  
+  
+\subsection{printlist 函数}  
+printlist() 函数提供了一种方便的方式来显示列表中的所有元素，这在开发和测试期间特别有用，可以用来调试和验证列表内容。也为我们后续设计测试代码提供了可视化工具和追踪工具。具体代码如下：
+
+\begin{lstlisting}[language=C++, caption={printlist()函数}]  
+/**
+ * @brief 打印链表
+ * @return 输出链表所有元素
+ */
+void printlist()
+{
+    if(empty() || head == nullptr) 
+    {
+        cout <<"The list is empty!"<< endl;
+        return;
+    }
+    Node* p = head ->next;
+    while(p != tail)
+    {
+        cout<< p -> data <<"\t";
+        p =p->next;
+    }
+    cout << endl;
+    return;
+}
+
+\end{lstlisting}
+在这里，list如果是空，则输出"The list is empty!",否则则一一输出list内所有的值。
+  
+\subsection{reverse 函数}  
+reverse() 函数允许就地反转列表，对于需要高效反转元素顺序的应用程序来说至关重要。代码如下：
+
+\begin{lstlisting}[language=C++, caption={reverse()函数}]  
+/**
+ * @brief 反转列表
+ * @return 反转后的链表
+ */
+void reverse()
+{
+    if(empty() || theSize == 1)//如果链表没有元素或者只有一个元素，那么链表反转后就是它本身
+    {
+        return;
+    }
+    Node* p = head -> next;
+    Node*tmp = p;
+    while(tmp != tail)//step1 把除head和tail以外的节点交换next,prev
+    {
+        p = p->next;
+        tmp ->next = tmp -> prev;
+        tmp ->prev = p;
+        tmp = p;
+    }
+    tmp = head ->next;//重新连接head和tail
+    head ->next ->next =tail;
+    tail ->prev ->prev =head;
+         
+    head ->next = tail ->prev;
+    tail ->prev = tmp;  
+    tmp = nullptr;     
+
+}
+\end{lstlisting}
+
+对于这个函数的实现，笔者的思路是这样的：首先将除了head和tail两个哨兵节点以外的所有节点，进行next和prev指针交换的操作。然后，再将原本第一个节点的next和原本的最后一个节点的prev与tail和head重连。最后再修改head和tail与链表的连接。
+
+  
+\subsection{remove\_all 函数}  
+remove\_all 函数通过提供一种能够删除所有特定元素的出现的方法，增强了 List 的功能，这对于管理可能需要清理重复值的数据集非常重要。代码如下：
+
+\begin{lstlisting}[language=C++, caption={remove\_all()函数}]  
+void remove_all(const Object &val)
+{
+    iterator it = begin();
+    iterator start;
+
+    while(it != end())
+    {
+        while(it != end() && *it != val)//找到第一个data = val 的节点的迭代器
+        {
+            ++it;
+        }
+        if(it == end()) break;//如果没有找到则退出
+
+        start = it;
+        while(it!=end() && *it == val)
+        {
+            ++it;
+        }
+        erase(start,it);
+    }
+}
+\end{lstlisting}
+
+该函数实现的思路，也是基于 erase(from,to) 和clear()一样，该函数同样可以基于  erase(itr) 函数来实现，但是考虑到要删除的值可能连续出现，利用erase(from,to) 函数显然效率更高。
+
+\section{设计和测试 List.cpp}  
+\subsection{List.cpp 的设计和结果}  
+在设计 List.cpp 时，我们的目标是通过一系列测试用例全面验证 List 类的所有功能。这包括基本的添加、删除操作，以及新实现的功能如列表反转和元素清除等。笔者输入的指令为"g++ -fsanitize=address -fno-omit-frame-pointer -g -std=c++17 List.cpp -o List"由于系统原因无法使用Valgrind,但AddressSanitizer同样能够检查是否存在内存泄漏。如果不存在，则没有任何显示。
+
+\subsubsection{测试构造函数和基本操作}
+首先我们先测试 list 的构造函数，和一些基本的操作，包括但不限于：front(),back(),size(),printlist().代码如下：
+\begin{lstlisting}[language=C++, caption={测试构造函数和基本操作}]  
+// 测试构造函数和基本操作  
+    cout << "Testing default constructor and push_back:" << endl;  
+    List<int> list1;  
+    for (int i = 1; i <= 5; ++i) {  
+        list1.push_back(i);  
+    }  
+    list1.printlist();  // 输出应为 1 2 3 4 5  
+    cout<<"list1's size is:"<<list1.size()<<endl;
+    cout<<"list1's the first value is:"<<list1.front()<<endl;
+    cout<<"list1's the last value is:"<<list1.back()<<endl;
+
+\end{lstlisting}
+
+测试输出的结果为：
+\begin{verbatim}  
+Testing default constructor and push_back:  
+1       2       3       4       5  
+list1's size is: 5  
+list1's the first value is: 1  
+list1's the last value is: 5  
+\end{verbatim}  
+
+\subsubsection{测试初始化列表构造函数}
+测试代码如下：
+\begin{lstlisting}[language=C++, caption={测试初始化列表构造函数}]  
+// 测试初始化列表构造函数  
+    cout << "Testing initializer list constructor:" << endl;  
+    List<int> list2 {10, 20, 30, 40, 50};  
+    list2.printlist();  // 输出应为 10 20 30 40 50
+\end{lstlisting}
+
+测试结果如下：
+\begin{verbatim}  
+Testing initializer list constructor:
+10      20      30      40      50 
+\end{verbatim}  
+
+\subsubsection{测试拷贝构造函数}
+测试代码如下：
+\begin{lstlisting}[language=C++, caption={测试拷贝构造函数}]  
+// 测试拷贝构造函数
+    cout << "Testing copy constructor:" << endl;  
+    List<int> list3 = list2;  
+    list3.printlist();  // 输出应为 10 20 30 40 50 
+\end{lstlisting}
+
+测试结果如下：
+\begin{verbatim}  
+Testing copy constructor:
+10      20      30      40      50
+\end{verbatim} 
+
+\subsubsection{测试移动构造函数}
+本节测试移动构造函数，并顺带测试了 empty() 。同时移动构造后，对list3进行printlist()操作，其实也侧面验证了list3被析构后的结果。测试代码如下：
+\begin{lstlisting}[language=C++, caption={测试移动构造函数}]  
+// 测试构造函数和基本操作  
+    cout << "Testing move constructor:" << endl;  
+    List<int> list4 = std::move(list3);  
+    list4.printlist();  // 输出应为 10 20 30 40 50  
+    cout << "After move, list3 is " << (list3.empty() ? "empty" : "not empty") << endl;  // 应为空
+\end{lstlisting}
+
+测试结果如下：
+\begin{verbatim}  
+Testing move constructor:
+10      20      30      40      50
+After move, list3 is empty
+\end{verbatim}  
+
+\subsubsection{测试移动赋值运算符}
+测试代码如下：
+\begin{lstlisting}[language=C++, caption={测试移动赋值运算符}]  
+// 测试移动赋值运算符
+    cout << "Testing move assignment operator:" << endl;  
+    List<int> list5;  
+    list5 = std::move(list4);  
+    list5.printlist();  // 输出应为 10 20 30 40 50  
+    cout << "After move assignment, list4 is " << (list4.empty() ? "empty" : "not empty") << endl;  // 应为空 
+\end{lstlisting}
+
+测试结果如下：
+\begin{verbatim}  
+Testing move assignment operator:
+10      20      30      40      50
+After move assignment, list4 is empty
+\end{verbatim}
+
+\subsubsection{测试赋值运算符}
+测试代码如下：
+\begin{lstlisting}[language=C++, caption={测试赋值运算符}]  
+// 测试赋值运算符  
+    cout << "Testing assignment operator:" << endl;  
+    list1 = list2;  
+    list1.printlist();  // 输出应为 10 20 30 40 50
+\end{lstlisting}
+
+测试结果如下：
+\begin{verbatim}  
+Testing move assignment operator:
+10      20      30      40      50
+\end{verbatim}
+
+\subsubsection{测试push\_front, pop\_back, pop\_front}
+测试代码如下：
+\begin{lstlisting}[language=C++, caption={测试赋值运算符}]  
+// 测试push_front, pop_back, pop_front  
+    cout << "Testing push_front, pop_back, and pop_front:" << endl;  
+    list1.push_front(0);  
+    list1.pop_back();  
+    list1.pop_front();  
+    list1.printlist();  // 输出应为 10 20 30 40
+\end{lstlisting}
+
+测试结果如下：
+\begin{verbatim}  
+Testing push_front, pop_back, and pop_front:
+10      20      30      40
+\end{verbatim}
+
+\subsubsection{测试插入和删除}
+测试代码如下：
+\begin{lstlisting}[language=C++, caption={测试插入和删除}]  
+// 测试插入和删除  
+    cout << "Testing insert and erase:" << endl;  
+    auto it = list1.begin();  
+    ++it;  // 指向 20  
+    list1.insert(it, 15);  // 在 20 前插入 15  
+    list1.printlist();  // 输出应为 10 15 20 30  
+    list1.erase(it);  // 删除 20  
+    list1.printlist();  // 输出应为 10 15 30
+\end{lstlisting}
+
+测试结果如下：
+\begin{verbatim}  
+Testing insert and erase:
+10      15      20      30      40
+10      15      30      40
+\end{verbatim}
+
+\subsubsection{测试范围删除}
+测试代码如下：
+\begin{lstlisting}[language=C++, caption={测试范围删除}]  
+// 测试范围删除  
+    cout << "Testing range erase:" << endl;  
+    list1.insert(list1.end(), 20);  
+    list1.insert(list1.end(), 30);  
+    list1.printlist();  // 输出应为 10 15 30 20 30  
+    it = list1.begin();  
+    ++it;  // 指向 15  
+    auto it2 = list1.end();    
+    list1.erase(it, it2);  
+    list1.printlist();  // 输出应为 10
+\end{lstlisting}
+
+测试结果如下：
+\begin{verbatim}  
+Testing range erase:
+10      15      30      40      20      30
+10
+\end{verbatim}
+
+\subsubsection{测试反转}
+测试代码如下：
+\begin{lstlisting}[language=C++, caption={测试反转}]  
+// 测试反转  
+    cout << "Testing reverse:" << endl;  
+    list1.push_back(10);  
+    list1.push_back(20);  
+    list1.push_back(30);  
+    list1.printlist();  // 输出应为 10 10 20 30  
+    list1.reverse();  
+    list1.printlist();  // 输出应为 30 20 10 10
+\end{lstlisting}
+
+测试结果如下：
+\begin{verbatim}  
+Testing reverse:
+10      10      20      30
+30      20      10      10
+\end{verbatim}
+
+\subsubsection{测试remove\_all}
+测试代码如下：
+\begin{lstlisting}[language=C++, caption={测试remove\_all}]  
+// 测试remove_all  
+    cout << "Testing remove_all:" << endl;  
+    list1.remove_all(10);  
+    list1.printlist();  // 输出应为 30 20
+\end{lstlisting}
+
+测试结果如下：
+\begin{verbatim}  
+Testing remove_all:
+30      20
+\end{verbatim}
+
+到这里
+\end{document} 
+

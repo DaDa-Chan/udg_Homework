@@ -1,0 +1,28 @@
+# 定义编译器
+CXX = g++
+# 编译选项
+CXXFLAGS = -Wall -g
+# 源文件
+SRC = Chicken.cpp
+# 目标文件
+OBJ = Chicken.o
+# 可执行文件
+TARGET = my_program
+
+# 默认目标：生成可执行文件
+all: $(TARGET)
+
+# 链接目标文件生成可执行文件
+$(TARGET): $(OBJ)
+	$(CXX) $(CXXFLAGS) -o $(TARGET) $(OBJ)
+
+# 编译 .cpp 文件生成 .o 文件
+%.o: %.cpp
+	$(CXX) $(CXXFLAGS) -c $< -o $@
+
+# 清理生成的文件
+clean:
+	rm -f $(OBJ) $(TARGET)
+
+# 伪目标，防止与实际文件重名
+.PHONY: all clean

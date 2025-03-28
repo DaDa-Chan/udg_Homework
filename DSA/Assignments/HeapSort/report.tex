@@ -1,0 +1,294 @@
+\documentclass[fontset=fandol]{ctexart}  
+\usepackage{geometry}  
+\geometry{margin=1.5cm, vmargin={0pt,1cm}}  
+\setlength{\topmargin}{-1cm}  
+\setlength{\paperheight}{29.7cm}  
+\setlength{\textheight}{25.3cm}  
+  
+\usepackage{xcolor}  % 使用 xcolor 而非 color  
+\usepackage{listings}  
+  
+% 设置代码样式  
+\lstset{  
+    basicstyle=\ttfamily\small,  
+    keywordstyle=\color{black},  
+    commentstyle=\color{gray},  
+    stringstyle=\color{red},  
+    numbers=left,  
+    numberstyle=\tiny\color{gray},  
+    stepnumber=1,  
+    numbersep=10pt,  
+    backgroundcolor=\color{white},  
+    showspaces=false,  
+    showstringspaces=false,  
+    frame=single,  
+    rulecolor=\color{black},  
+    tabsize=4,  
+    captionpos=b,  
+    breaklines=true,  
+    breakatwhitespace=false,  
+    escapeinside={(*@}{@*)}  % 更改逃逸字符设置  
+}  
+
+\usepackage{booktabs} % 表格增强功能（可选）
+\usepackage{float}
+\usepackage{array}    % 表格增强功能（可选）
+
+
+\title{Heap report}
+\author{汉铮 陈}
+\date{ December 2024}
+
+\begin{document}
+
+\maketitle
+\section{简介}
+本文主要分为两部分开展，第一部分主要说明堆排序的代码实现，第二部分主要分析比较堆排序的效率。
+\section{HeapSort 实现}
+对一个序列，无论有序还是无序，对其进行堆排序，大致上分为两步；1，将序列转化为类似于Binary heap的结构 2，对具有堆结构的序列进行排序。
+
+\textbf{基本原理}：不妨假设有一个size为n的序列，由于排序后的序列是递增序列，所以我们首先应当将序列转化为\textbf{大顶堆}（即堆顶元素为当前序列的最大值，在序列中为第一个元素）。然后将该元素与序列最后元素进行\textbf{swap}。此时序列最后一个元素为整个序列的最大元素，为有序状态，因此在后续的排序中可以省去。而堆顶元素为原来序列的最后一个元素，破坏了堆的顺序性质，则需要通过\textbf{percolateDown（下滤）}操作来维护堆的性质。维护完后，将前n-1个元素看作为一个堆，此时只要重复以上步骤便可以得到第二大的元素......以此类推，共n-1次便可以得到一个有序的序列。
+
+\textbf{Remark:}区别于STL中的make\_heap函数和sort\_heap()函数，本文中HeapSort的实现基于容器的下标而非迭代器。
+\subsection{Step1 BuildHeap}
+在这一部分我们将创建大顶堆，但区别于Binary heap，序列的第一个元素下标为\textbf{0}而非\textbf{1}，所以对于创建堆的代码较以前有所不同，主要体现在：下标的为i的元素的左孩子下标为"2*i+1"而非"2*i"
+
+创建大顶堆涉及下滤操作。而下滤的主要原理是：将该位置的元素与其为位置的左右孩子比较，下降到合适的层高。并且与左右孩子中的较大者交换保证了堆顶元素为序列中的最大者。其代码如下：
+\begin{lstlisting}[language=C++, caption={percolatdown()函数}]  
+template <typename T>
+/**
+ * @brief 下滤操作
+ * @param i 下滤的起点
+ * @param n 下滤终点
+ */
+inline void percolatedown(vector<T> & vec, int i ,int n)
+{
+    int child = i;
+    T tmp;
+
+    for(tmp = std::move(vec[i]) ; 2*i+1 < n ; i = child ) 
+    {
+        child = 2*child +1;//左孩子
+        if(child < n-1 && vec[child] < vec[child +1])
+            ++child;//左右孩子中的较大者
+        if(tmp < vec[child])
+            vec[i]=std::move(vec[child]);
+        else break;
+    }
+    vec[i] = std::move(tmp);
+}
+
+\end{lstlisting}
+
+对于一元素数量为n的堆（索引从0开始），它的叶子节点的索引范围是[n/2]到n-1，而叶子不需要进行下滤操作，故只需要对0到[n/2]-1的元素从下往上进行下滤操作即可。具体代码如下：
+\begin{lstlisting}[language=C++, caption={BuildHeap()函数}]  
+template <typename T>
+/**
+ * @brief 创建大顶堆，即堆顶为元素最大值
+ */
+inline void BuildHeap(vector<T> &vec)
+{
+    for(int i = vec.size()/2-1;i >= 0;--i)
+        percolatedown(vec,i,vec.size());
+}
+\end{lstlisting}
+
+
+\subsection{Step2 SortHeap}
+Sort的原理前文已经简述，其本质上是一个删除最大元素的操作，在每次交换堆顶元素以及堆最后一个元素后，只要将第一个元素下滤即可保持堆的顺序性质，值得注意的是，每找出一个最大元素，堆的大小就减1。具体代码如下：
+\begin{lstlisting}[language=C++, caption={Sort()函数}]  
+template <typename T>
+/**
+ * @brief 将堆进行排序
+ */
+inline void Sort(vector<T> &vec)
+{
+    for(int i = vec.size()-1 ; i >0 ; --i)
+    {
+        swap(vec[0],vec[i]);
+        percolatedown(vec,0,i);
+    }
+}
+\end{lstlisting}
+
+最终HeapSort的代码为：
+\begin{lstlisting}[language=C++, caption={Heapsort()函数}]  
+template <typename T>
+/**
+ * @brief 将堆进行排序
+ */
+template <typename T>
+inline void Heapsort(vector<T> &vec)
+{
+    BuildHeap(vec);
+    Sort(vec);
+    return;
+}
+\end{lstlisting}
+
+
+
+\section{HeapSort 测试}
+这一部分主要为分为两部分：1，设计检查函数和特定队列 2，比较HeapSort和sort\_heap运行时间 3，分析时间效率
+对于检查函数的设计和特定队列的设计并不会着重说明，主要分析后两者。
+\subsection{check函数}
+check函数主要输出排序的时间和判断排序结果是否正确。对于前者主要通过measureTime函数（利用chrono）记录排序的时间。判断排序正确性，则通过比较具有相同元素的两个初始序列经过HeapSort和sort\_heap(还有make\-heap)后元素是否一一对应。
+
+\textbf{Remark:}只有在同一个序列的情况下，两者比较才有意义。其次比较的是排序的时间，创建堆结构的时间并不再比较范围内。但是判断正确性却是创建堆和排序的共同结果。所以，在check函数中，笔者并没有直接利用HeapSort这个函数，而是用其两个内置函数Sort函数和Buildheap函数。具体代码如下；
+
+\begin{lstlisting}[language=C++, caption={check()函数&measuretime模版函数}]
+template <typename Func> // 测量运行时间的模板函数
+long long measureTime(Func func, std::vector<int> &data) {
+    auto start = std::chrono::high_resolution_clock::now();
+    func(data);
+    auto end = std::chrono::high_resolution_clock::now();
+    return std::chrono::duration_cast<std::chrono::milliseconds>(end - start).count();
+}
+
+void check(vector<int> &vec1,vector<int> &vec2)
+{
+    int flag = 1;//旗帜
+    BuildHeap(vec1);
+    std::cout << "Heapsort: " << measureTime(Sort<int>, vec1) << " ms\n";
+    make_heap(vec2.begin(),vec2.end());
+    std::cout << "sort_heap: " << measureTime([](std::vector<int>& data) {std::sort_heap(data.begin(), data.end());}, vec2) << " ms\n";
+    
+    for(int i = 0; i<vec1.size() ; ++i)//判断正确性
+    {
+        if(vec1[i] != vec2[i]) 
+            cout << "Error!" << endl;
+            flag = 0; break;
+    } 
+    if(flag == 1) cout << "PASS!" << endl;
+}
+\end{lstlisting}
+
+值得注意的是构建模版函数func接收的是vector<int> \&data,而sort\_heap则接收两个容器的迭代器，故无法直接套用，此处运用了lambda表达式来解决这个问题。
+
+\subsection{序列的构造}
+接下来是四种序列的创建，此处不做过多赘述。
+
+随机序列，具体代码如下：
+\begin{lstlisting}[language=C++, caption={RandomSeq()函数}]  
+const int SIZE = 1000000;
+
+// 创建随机序列
+vector<int> RandomSeq() 
+{
+    vector<int> sequence(SIZE);
+    random_device rd;
+    mt19937 gen(rd());
+    uniform_int_distribution<> dis(1, 1000000);  // 生成1到1000000之间的随机数
+
+    for (int i = 0; i < SIZE; ++i) {
+        sequence[i] = dis(gen);
+    }
+    return sequence;
+}
+\end{lstlisting}
+
+递增序列，具体代码如下：
+\begin{lstlisting}[language=C++, caption={OrderedSeq()函数}]  
+// 创建有序序列（递增）
+vector<int> OrderedSeq() {
+    vector<int> sequence(SIZE);
+    for (int i = 0; i < SIZE; ++i) {
+        sequence[i] = i + 1;  // 顺序填充1到SIZE
+    }
+    return sequence;
+}
+\end{lstlisting}
+
+递增序列，具体代码如下：
+\begin{lstlisting}[language=C++, caption={ReverseSeq()函数}]  
+// 创建逆序序列（递减）
+vector<int> ReverseSeq() {
+    vector<int> sequence(SIZE);
+    for (int i = 0; i < SIZE; ++i) {
+        sequence[i] = SIZE - i;  // 填充SIZE到1
+    }
+    return sequence;
+}
+\end{lstlisting}
+
+部分重复序列，具体代码如下：
+\begin{lstlisting}[language=C++, caption={RepetitiveSeq()函数}]  
+// 创建部分元素重复序列
+vector<int> RepetitiveSeq() {
+    vector<int> sequence(SIZE);
+    random_device rd;
+    mt19937 gen(rd());
+    uniform_int_distribution<> dis(1, 500000);  // 生成1到500000之间的随机数
+
+    for (int i = 0; i < SIZE; ++i) // 随机生成大部分元素
+    {
+        sequence[i] = dis(gen);
+    }
+
+    uniform_int_distribution<> disRepeat(0, SIZE - 1);// 随机重复一些元素
+    for (int i = 0; i < SIZE / 10; ++i) {  // 重复10%的元素
+        int index = disRepeat(gen);
+        sequence[i] = sequence[index];
+    }
+    return sequence;
+}
+
+\end{lstlisting}
+
+\subsection{main函数及测试结果}
+
+如上文所述，每种类型序列创造后，再复制一遍保证可比较性，此处部分代码有所省略，将以表格的形式呈现输出结果
+\begin{lstlisting}[language=C++, caption={main()}]  
+int main() {
+    // 创建四种序列
+    vector<int> randomSeq = RandomSeq();
+    vector<int> orderedSeq = OrderedSeq();
+    vector<int> reverseSeq = ReverseSeq();
+    vector<int> repetitiveSeq = RepetitiveSeq();
+
+    vector<int> oldrandomSeq = randomSeq;
+    vector<int> oldorderedSeq = orderedSeq;
+    vector<int> oldreverseSeq = reverseSeq;
+    vector<int> oldrepetitiveSeq = repetitiveSeq;
+
+    check(randomSeq,oldrandomSeq);
+    check(orderedSeq,oldorderedSeq);
+    check(reverseSeq,oldreverseSeq);
+    check(repetitiveSeq,oldrepetitiveSeq);
+    return 0;
+}
+
+\end{lstlisting}
+
+以某一次试验结果为例：
+\begin{table}[H]
+\centering
+\begin{tabular}{|c|c|c|c|}
+\hline
+\textbf{type}   & \textbf{my heapsort time} & \textbf{std::sort\_heap time} &\textbf{Validty}\\ \hline
+randomSeq       &44ms                       &45ms    &PASS\\ \hline
+orderedSeq      &26ms                       &28ms    &PASS\\ \hline
+reverseSeq      &26ms                       &29ms    &PASS\\ \hline
+repetitiveSeq   &43ms                       &46ms    &PASS\\ \hline
+\end{tabular}
+\caption{测试结果}
+\label{tab:simple_table}
+\end{table}
+
+经过多次测试，发现如图表所示，HeapSort中的Sort函数的排序效率略高于STL中的sort\_heaphan函数。笔者猜想有以下原因：
+\begin{enumerate}
+    \item std::sort\_heap 是泛型算法，支持任何符合堆概念的容器和迭代器。Heapsort 直接操作 std::vector，没有额外的迭代器间接性，因此可能更快。
+    \item 笔者的实现中，percolatedown 和其他函数被标记为 inline，这可能使编译器更容易进行函数内联优化。
+    \item 避免了 STL 的额外安全检查和通用性逻辑。
+\end{enumerate}
+
+\subsection{时间复杂度分析}
+这部分的时间复杂度涉及Buildheap和Sort两部分；
+
+首先来看Buildheap。对一个堆来说，如果化为树，则是一个完全二叉树。则对于一个具有N个节点的完全二叉树来说，总存在一个整数h，使得N在$2^h$和$2^{h+1}-1$之间，其中h为树的高度，最底层h=0.所以对于 the worstcase 的情况，即满二叉树，且对于每一个高度不为0的节点（满二叉树的叶子节点），下滤的次数的大小和其高度一样。对于一个N=$2^{h+1}-1$的序列下滤次数总和最多为$2^{h+1}-1-(h+1)$次，h = [$logN$],故时间复杂度为\textbf{O(N)}，边界为2N次比较。
+
+再看Sort部分，在swap堆顶元素和堆尾元素后，堆顶元素要进行下滤，the worstcase是下滤到底部，这样的操作有N-1次，由于堆的大小在不断减小，则比较次数的上界显然为$NlogN$,实际上因该为$NlogN-o(N)$其中$o(N)$为$NlogN$的高阶无穷小。
+
+综上对于一个有N个元素随机序列，它的时间复杂度应该与$O(NlogN)$比较。
+
+\end{document}

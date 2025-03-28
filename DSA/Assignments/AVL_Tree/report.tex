@@ -1,0 +1,128 @@
+\documentclass[fontset=fandol]{ctexart}  
+\usepackage{geometry}  
+\geometry{margin=1.5cm, vmargin={0pt,1cm}}  
+\setlength{\topmargin}{-1cm}  
+\setlength{\paperheight}{29.7cm}  
+\setlength{\textheight}{25.3cm}  
+  
+\usepackage{xcolor}  % 使用 xcolor 而非 color  
+\usepackage{listings}  
+  
+% 设置代码样式  
+\lstset{  
+    basicstyle=\ttfamily\small,  
+    keywordstyle=\color{black},  
+    commentstyle=\color{gray},  
+    stringstyle=\color{red},  
+    numbers=left,  
+    numberstyle=\tiny\color{gray},  
+    stepnumber=1,  
+    numbersep=10pt,  
+    backgroundcolor=\color{white},  
+    showspaces=false,  
+    showstringspaces=false,  
+    frame=single,  
+    rulecolor=\color{black},  
+    tabsize=4,  
+    captionpos=b,  
+    breaklines=true,  
+    breakatwhitespace=false,  
+    escapeinside={(*@}{@*)}  % 更改逃逸字符设置  
+}  
+
+\title{BST\_remove的改善}
+\author{汉铮 陈}
+\date{\today}
+
+\begin{document}
+
+\maketitle
+
+\section{remove函数的完善}
+首先创建辅助函数 findParent(BinaryNode* \&subroot, const Comparable \&x)  用于找到节点element为x的parent,主要是为了后续更新节点用，代码如下：
+
+\begin{lstlisting}[language=C++, caption={findParent()函数}]  
+    BinaryNode* findParent(BinaryNode* &subroot, const Comparable &x)
+    {
+        if (subroot == nullptr || subroot->element == x) return nullptr;
+        BinaryNode* parent = nullptr;
+        BinaryNode* cur = subroot;
+        while (cur != nullptr && cur->element != x)
+        {
+            parent = cur;
+            if (x < cur->element)
+            {
+                cur = cur->left;
+            }
+            else
+            {
+                cur = cur->right;
+            }
+        }
+        if (cur == nullptr) return nullptr;//没有找到
+        if ((parent->left == cur || parent->right == cur) && cur->element == x) return parent;
+        return nullptr;        
+    }
+\end{lstlisting}
+
+而remove()函数的实现只需要在原来的基础上，自下而上增加平衡和height更新的操作直到某一节点高度更新前后相同即可，具体代码如下：
+\begin{lstlisting}[language=C++, caption={remove函数}]  
+    void remove(const Comparable &x, BinaryNode * &t) 
+    {
+        if(!t) return;//如果t为空节点
+        BinaryNode* par = nullptr; // 父节点的指针
+        BinaryNode* cur = t;
+        while (cur != nullptr && cur->element != x) 
+        {
+            par = cur;
+            if (x < cur->element) cur = cur->left;
+            else cur = cur->right;
+        }
+        if(!cur) return;
+        if(!(cur ->left) || !(cur -> right))//要删除的节点至多只有一个child节点
+        {
+            if(!par)//如果删除根节点
+            {
+                t = (cur -> left)? cur->left : cur->right;//修改根节点
+            }
+            if(par -> left == cur)//t是par的左节点
+            {
+                par -> left = (cur -> left)? cur->left : cur->right;
+            }else//cur is parent's right
+            {
+                par -> right = (cur -> left)? cur->left : cur->right;
+            }
+            delete cur;
+            cur =nullptr;
+        }else//有两个child节点
+        {
+            BinaryNode* min = detachMin(cur->right);
+            min -> left = cur -> left;// 将当前节点的左子树链接到后继节点
+            min -> right = cur -> right;// 将当前节点的右子树链接到后继节点
+            if(!par)//如果删除根节点
+            {
+                t = min;//修改根节点
+            }
+            else if(par -> left == cur)//cue是par的左节点
+            {
+                par -> left = min;// 父节点指向后继节点
+            }else//cur是右节点
+            {
+                par -> right = min;// 父节点指向后继节点
+            }
+            delete cur;
+            cur = nullptr;
+        }
+        while (par != nullptr) 
+        {
+            int oldHeight = par->height; // 记录平衡前的高度
+            balance(par); // 调整 cur 的平衡
+            par->height = max(height(par->left), height(par->right)) + 1; // 更新 cur 的高度
+            if (par->height == oldHeight) break; // 如果高度没有变化，提前停止
+            par = findParent(t,par -> element);
+        }
+    }
+\end{lstlisting}
+完
+
+\end{document}

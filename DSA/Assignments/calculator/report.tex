@@ -1,0 +1,655 @@
+\documentclass[fontset=fandol]{ctexart}  
+\usepackage{geometry}  
+\geometry{margin=1.5cm, vmargin={0pt,1cm}}  
+\setlength{\topmargin}{-1cm}  
+\setlength{\paperheight}{29.7cm}  
+\setlength{\textheight}{25.3cm}  
+
+\usepackage{xcolor}  
+\usepackage{listings}  
+
+
+\lstset{  
+    inputencoding=utf8,             % 确保代码块使用 UTF-8 编码  
+    basicstyle=\ttfamily\small,     % 设置基本字体为等宽小字体  
+    keywordstyle=\color{blue},      % 关键字颜色  
+    commentstyle=\color{darkgray}\itshape,      % 注释颜色  
+    stringstyle=\color{red},        % 字符串颜色  
+    numbers=left,                   % 显示行号在左侧  
+    numberstyle=\tiny\color{gray},  % 行号的样式  
+    stepnumber=1,                   % 每行显示行号  
+    numbersep=10pt,                 % 行号与代码的间距  
+    backgroundcolor=\color{white},  % 代码块背景色  
+    showspaces=false,               % 不显示空格  
+    showstringspaces=false,         % 字符串中不显示空格  
+    frame=single,                   % 添加单行边框  
+    rulecolor=\color{black},        % 边框颜色  
+    tabsize=4,                      % Tab 宽度  
+    captionpos=b,                   % 标题位置  
+    breaklines=true,                % 自动换行  
+    breakatwhitespace=true,         % 在空白处换行  
+    escapeinside={(*@}{@*)},        % 更改逃逸字符设置  
+    frameround=fttt,
+}
+
+% 在hyperref包选项中添加unicode=true
+\usepackage[colorlinks=true, linkcolor=blue, citecolor=blue, urlcolor=blue, 
+            bookmarks=true, unicode=true]{hyperref}
+% 在hyperref之后加载bookmark包
+\usepackage{bookmark}
+
+\title{\textbf{Calculator report}}
+\author{汉铮 陈}
+\date{December  2024}
+
+\begin{document}
+
+\maketitle
+
+\section{项目简介}
+该项目旨在编写一个四则运算表达式求值程序，该程序能处理含有加(+)、减(-)、乘(*)、除(/)和括号(())的中缀表达式。程序能判断输入是否合法，并在不合法的情况下输出"ILLEGAL"。
+
+本项目在使用C++标准库中的容器和算法基础下，支持多重括号和四则运算，支持有限位小数运算，支持负数运算，支持科学计数法（e、E皆可）。可以识别非法的表达式，如括号不匹配、运算符连续使用、表达式以运算符开头或结尾以及除数是 0 等。在基础四则运算器的基础上做出了功能的拓展。其中科学计数法正确表达形式范围为：e(E)前可以为整数也可以为浮点数，e(E)后可以是signed也可以是unsigned的整数。
+
+\section{项目实现}
+\textbf{该四则运算器的实现思路主要如下：}首先，对外界输入的字符串型的表达式进行切分。然后对表达式进行大部分判断的检查，检查通过后则将中缀表达式转化为后缀表达式。最后计算后缀表达式。\textbf{值得注意的是},表达式中"/0"除数为零的错误类型无法在第二步里直接判断，而是将它放置在了计算后缀表达式中判断，例如"1/(1-1)"这显然是合法的中缀表达式，但是"/0"中的"0"要通过计算得到。
+
+本项目的实现中，笔者运用了vector、stack、string、char四种数据结构。由于笔者能力有限，并没有优化数据结构，代码可能略显繁复，请见谅！
+
+下面每个小节将由四个部分组成，分别为：\textbf{设计目的、设计思路、实现代码、remark}。
+
+\subsection{切分表达式}
+\textbf{设计目的：}这一部分不涉及表达式合法性的判断以及预处理，但却为后面的功能服务。切分的依据主要是将表达式中的“数”（包括数字、小数点、e、E）和“符号”（包括计算符、括号、其他）进行分离。这有利于后续对符号和数进行判断、转换、预处理。
+
+\textbf{设计思路：}首先，我们构造辅助函数type，用于判别字符串中每一个字符的类型，如果是“符号”，则单独作为一个字符串放入一个vector容器内，如果遇到“数”则将其作为一个整体放入容器内。对于字符串的切分，笔者使用了快慢指针的方法，符号以单个字符为单位，而数字则包含在快慢指针的范围内。
+
+辅助函数type用以判断字符的类型，不同的字符返回不同的整数，其中-1为其他符号，0为运算符，1为括号，2为整数，3为小数点，4为e（E），可以发现-1，0，1对应的字符都将被单独划分，2、3、4则都是作为数整体的一部分，具体代码如下：
+\begin{lstlisting}[language=C++,caption={type()}]
+/**
+ * @brief 区分不同字符的类型，字符与数字类型相关的区分界限为1
+ * @param 字符
+ * @return 不同字符对应的编号
+ */
+inline int type(const char& ch)
+{
+
+    if (ch == '+' || ch == '-' || ch == '*' || ch == '/') return 0;
+    if (ch =='(' || ch == ')') return 1;
+    if ('0' <= ch && ch <= '9') return 2;
+    if (ch == '.') return 3;
+    if (ch == 'e' || ch == 'E') return 4;//支持大写“E”
+    else return -1;
+}
+\end{lstlisting}
+
+接下来是划分函数split，对表达式进行划分，例如"$1+2*(2.1-1.5e-1)/3$",划分为"1", "+", "2", "*", "(", "2.1", "1.5e-1", ")", "/", "3"。
+
+在该函数中，对与数整体的划分主要是指：
+\begin{enumerate}
+    \item 小数点作为数整体的一部分划分，无论是否合法。例如"$1.+1$"中的"1."作为一个整体，而"1.+1"显然是违法的。
+    \item e(E)作为数的整体一部分划分无论是否合法。例如"$1e++1$"，"$E+1+1$"中的"1e+","E+1"作为整体而划分，而从科学计数法的角度都是不合法的。
+\end{enumerate}
+
+具体的代码如下：
+
+\begin{lstlisting}[language=C++,caption={split()}]
+/**
+ * @brief 对输入的表达式进行切分
+ * @param 装载的空容器、输入的表达式
+ * @return 切分过的字符串
+ */
+inline void split(vector<string> &result,string &input)
+{
+    size_t fast = 0;
+    size_t low  = 0;
+    while(fast < input.size())
+    {
+        if(type(input[fast]) <= 1 )//除了数字、小数点、“e”之外的都做单个切分
+        {
+            result.push_back(string(1,input[fast]));
+            fast++;
+        }
+        else 
+        {
+            string elm = "";
+            while(fast < input.size() && type(input[fast])>1)//将数字作为一个整体放入容器内
+            {
+                elm += input[fast];
+                fast++;
+                if (type(elm.back()) == 4) //出现"e"或者"E"
+                {
+                    if (fast < input.size() && (input[fast] == '+' || input[fast] == '-')) 
+                    {
+                        elm += input[fast];
+                        fast++;
+                    }
+                }
+            }
+            result.push_back(elm);
+        }
+        low = fast;
+    }
+}    
+\end{lstlisting}
+
+\textbf{Remark:}本项目支持负数计算，有四种类型："+ -", "- -", "* -", "/ -"这四种都是合法的，然而在划分的过程中，程序将负号看作减号而单独分离出来，这是因为任何一个负数可以看作"0"减去它的绝对值（也就是正数部分），这也是后续的预处理负数部分的原理。
+
+\subsection{检查中缀表达式}
+\textbf{设计目的：}对表达式是否合法判断，判断的范围涵盖除了"div 0"外几乎所有的错误类型。判断类型跟划分依据一致，符号和数，其中符号判断包括符号类型、运算逻辑，数判断包括浮点数，科学计数法。并预处理负数。
+\textbf{设计思路：}首先，所有的符号，其长度都为1，则对于符号类型可以继续依靠type函数，若type函数返回为-1则为非法符号。（这一部分的判断可以在split函数里实现，但是为了保证功能的区分和纯粹性，仍写在这一部分）对于符号逻辑，则通过符号左右位置的数据类型来判断。其次，对于数，通过构造check\_float和check\_e来分别判断服浮点数和科学计数法的合法性。接下来将列出一些常见的判断情况。
+
+一些错误的类型（字符）：
+\begin{enumerate}
+    \item 非法符号"\@\$\%\^\&......
+    \item 运算符"+ - * /"左侧不是")"或数，右边不是"("或数
+    \item 括号数量不匹配，或者先出现")"后出现,或者")(" "()"
+\end{enumerate}
+
+一些正确的类型（数）：
+\begin{enumerate}
+    \item 浮点数：小数点有且仅有一个且左右必须存在数字
+    \item 科学计数法：四种基本情况（即内置stof函数支持的科学计数法的类型，e(E)后面） 
+\end{enumerate}
+
+首先是辅助函数check\_float()，具体代码如下：
+\begin{lstlisting}[language=C++, caption={check\_float()}]
+/**
+ * @brief 检查带有小数点的数据的正确性，包括用科学技术法表示的float数据
+ */
+inline void check_float(string &str,int &flag)
+{
+    int num = count(str.begin(),str.end(),'.');
+    size_t pos = str.find(".");
+
+    if (pos == std::string::npos) return; // 没有小数点，不是浮点数，但合法.这一步为了判断科学计数法数据而设计
+
+    if(num > 1) 
+    {
+        cout << "ILLEGAL_f1" << endl; //小数点大于一个报错
+        flag = 0;
+        return;
+    }
+
+    else if(pos == 0 || pos == str.length()-1 )
+    {
+        cout << "ILLEGAL_f2" << endl; //小数点前后没有数字报错
+        flag = 0;
+        return;
+    }
+
+    else if(type(str[pos+1]) != 2 || type(str[pos-1]) != 2)
+    {
+        cout << "ILLEGAL_f3" << endl;//小数点前后不是数字报错
+        flag = 0;
+        return;
+    }
+}    
+\end{lstlisting}
+
+其次是辅助函数check\_e(),具体代码如下：
+\begin{lstlisting}[language=C++, caption={check\_e()}]
+/**
+ * @brief 检查用科学计数法表示的数据的正确性，如果正确则转化呗float型数据
+ */
+inline void check_e(string & str ,vector<string> &result ,int &k,int &flag)
+{
+    int num = count(str.begin(),str.end(),'e') + count(str.begin(), str.end(), 'E');
+    size_t pos = str.find("e");
+    if (pos == string::npos) pos = str.find('E');
+
+    if(pos == string::npos) return;
+
+    if(num >1) 
+    {
+        cout << "ILLEGAL_e1" << endl;//e的数量大于两个报错；
+        flag = 0;
+        return;
+    }
+    if(pos == 0 || pos == str.length()-1 )
+    {
+        cout << "ILLEGAL_e2" << endl; //e前后没有数字报错
+        flag = 0;
+        return;
+    }
+
+    string before_e = str.substr(0, pos);
+    check_float(before_e,flag);  // 如果 before_e 不合法，会直接输出 ILLEGAL 并返回
+
+    // 检查 e 后的部分是否合法（整数，可以带符号）
+    string after_e = str.substr(pos + 1);
+
+    // e 后面不能是空的
+    if (after_e.empty()) {
+        cout << "ILLEGAL_e3" << endl;
+        flag = 0;
+        return;
+    }
+
+    // e 后的第一字符可以是 '+' 或 '-'
+    size_t start = 0;
+    if (after_e[0] == '+' || after_e[0] == '-' ) {
+        if(after_e.size()>1) start = 1;
+        else {
+            cout << "ILLEGAL_e4"
+            flag = 0;
+            return;
+        }
+    }
+
+    // e 后的部分必须是纯数字
+    for (size_t i = start; i < after_e.size(); ++i) {
+        if (type(after_e[i]) != 2) {
+            cout << "ILLEGAL_e5" << endl;
+            flag = 0;
+            return;
+        }
+    }
+}
+\end{lstlisting}
+
+最后是表达式的判断函数，包含预处理负数。预处理负数的逻辑是：首先判断是否出现某个运算符号与减号相连，如果是则在减号前加"0"。值得注意的是由于运算优先级的问题，在乘除后出现减号（负号）则还需增加括号，否则则会有运算逻辑问题。具体代码如下；
+\begin{lstlisting}[language=C++, caption={check\_expressor()}]
+/**
+ * @brief 检查表达式的正确性,预处理负数
+ */
+inline void check_expressor(vector<string> & result, int &flag)
+{
+    int Leftbrackets = 0;//左括号数
+    
+    for(int i = 0;i<result.size();i++)
+    {
+        if(result[i].size() == 1)
+        {
+            if((type(result[i][0]) == -1 || type(result[i][0]) >= 3))//如果出现特殊符号，或者"."和“e”单独出现则报错
+            {
+                cout << "ILLEGAL_c1" << endl;
+                flag = 0;
+                break;
+            }
+
+            //判断括号
+            if(type(result[i][0]) == 1)//出现括号
+            {
+                if(result[i] == "(") //出现左括号+1，右括号-1
+                {
+                    if(i-1 >= 0 && type(result[i][0]) == 2){
+                        cout << "ILLEGAL_c2" << endl;
+                        flag = 0;
+                        break;
+                    }
+                    else Leftbrackets++;
+                }
+                else 
+                {
+                    Leftbrackets--;
+                    if(Leftbrackets < 0)//右括号数大于左括号数报错
+                    {
+                        cout << "ILLEGAL_c2" << endl;
+                        flag = 0;
+                        break;
+                    }
+                    if(result[i-1] == "(" || (i<result.size()-1 && result[i+1] == "("))//"()"or")("
+                    {
+                        cout << "ILLEGAL_c3"<<endl;
+                        flag = 0;
+                        break;
+                    }
+                }
+
+            }
+            //预处理负数情况
+            if(i == 0 && result[i] == "-")//处理负数为第一个数的情况
+                result.insert(result.begin()+i , "0");
+
+            if (result[i] == "+" || result[i] == "(")
+            {
+                if( i+1 < result.size() - 1 && result[i+1] == "-")
+                    result.insert(result.begin()+i+1 , "0");
+            }
+
+            if (result[i] == "*" || result[i] == "/" || result[i] == "-")
+            {
+                if( i+1 < result.size() - 1 && result[i+1] == "-")
+                {
+                    result.insert(result.begin()+i+3 , ")");
+                    result.insert(result.begin()+i+1 , "0");//其实可以省略只要加括号，后续遍历会回到上面一种情况
+                    result.insert(result.begin()+i+1 , "(");
+                }
+            }
+
+            // 检查操作符两边是否合法
+            if (type(result[i][0]) == 0)// + - * /
+            {
+                // 检查左侧是否合法
+                if (i == 0 || (type(result[i - 1][0]) != 2 && result[i - 1] != ")")) 
+                {
+                    cout << "ILLEGAL_c4" << endl;
+                    flag = 0;
+                    break;
+                }
+                // 检查右侧是否合法
+                if (i == result.size() - 1 || (type(result[i + 1][0]) != 2 && result[i + 1] != "(")) 
+                {
+                    cout << "ILLEGAL_c5" << endl;
+                    flag = 0;
+                    break;
+                }
+            }
+
+        }
+        else//判断数据正确性
+        {
+            check_float( result[i] , flag );
+            check_e( result[i] , result , i , flag );
+        }
+    }
+    //判断括号是否匹配
+    if (Leftbrackets != 0) {
+        cout << "ILLEGAL_c6" << endl;
+        flag = 0;
+    }
+}
+\end{lstlisting}
+\textbf{Remark:}预处理负数和检查操作符两边是否合法这两部是有先后顺序的，应当先预处理负数，再判断符号左右是否合法，否则则会因为运算符与符号相连而被先判为非法表达式！还有type函数接受的是char型，被切分后的字符已经转化为string型，所以要去字符串的第一位。
+
+并且如果输入的表达式通过这一步，则说明该表达式几乎没有非法情况（除了"div 0"），因此可以顺畅的进入中缀转后缀表达式这一环节。
+\subsection{转化后缀表达式}
+\textbf{设计目的：}将中缀表达式表达式转化为后缀表达式，解决中缀计算中的优先级和括号问题。
+
+\textbf{设计思路：}首先构造priorty函数，对运算符号设置优先级。遍历中缀表达式，遇到“数”直接放入储存后缀表达式的vector内，利用stack数据结构实现运算符号的重新排序，其中stack弹出原则为当加入的运算符优先级小于等于栈顶，栈顶弹出，直到遇到遇到括号或者栈为空。这边对括号做了单独考虑，因为笔者发现对括号赋予优先级，仍要单独讨论，故省去。
+
+具体代码如下：
+\begin{lstlisting}[language=C++, caption={priority() \& suffixexpressor()}]
+/**
+ * @brief 比较计算符号的优先级
+ * @param "+,-,*,/"
+ * @return 返回计算符号的优先级，数字越大表示优先级越高
+ */
+inline int priority(const string& t)
+{
+    if(t == "+" || t == "-") return 1;
+    if(t == "*" || t == "/") return 2;
+    return -1;
+}
+
+/**
+ * @brief 将中缀表达式转化为后缀表达式
+ */
+inline vector<string> suffixexpressor(vector<string> &infix)
+{
+    vector<string> suffix;
+    stack<string> op;
+    
+    for(size_t i = 0 ; i<infix.size() ; ++i)
+    {
+        if(type(infix[i][0]) == 2)//遇到数字，入栈
+        {
+            suffix.push_back(infix[i]);
+            continue;
+        }
+        else if(infix[i] == "(") op.push(infix[i]);
+        else if (infix[i] == ")") 
+        { // 遇到右括号
+            // 弹出操作符，直到遇到左括号为止
+            while (!op.empty() && op.top() != "(") {
+                suffix.push_back(op.top());
+                op.pop();
+            }
+            if (!op.empty() && op.top() == "(") {
+                op.pop(); // 弹出左括号，但不加入后缀表达式
+            } else {
+                cout << "ILLEGAL: Mismatched parentheses" << endl;
+                return {};
+            }
+        } 
+        else 
+        { // 普通操作符
+            // 弹出优先级高或相同的操作符，直到栈为空或遇到左括号
+            while (!op.empty() && op.top() != "(" && priority(infix[i]) <= priority(op.top())) {
+                suffix.push_back(op.top());
+                op.pop();
+            }
+            op.push(infix[i]); // 当前操作符入栈
+        }
+
+        /*(auto val : suffix)//标记1
+        {
+            cout << val << " ";
+        }
+        cout << endl;
+        */
+    }
+
+    while(!op.empty())
+    {
+        if (op.top() == "(") 
+        {
+            cout << "ILLEGAL: Mismatched parentheses" << endl;//标记2
+            return {};
+        }
+        suffix.push_back(op.top());
+        op.pop();
+    }
+    return suffix;
+}  
+\end{lstlisting}
+\subsection{计算后缀表达式}
+\textbf{设计目的：}计算后缀表达式，并判断是否出现"div 0"的情况，如果出现输出"ILLEGAL".
+
+\textbf{设计思路：}要计算后缀表达式，由于储存后缀表达式的容器为vector类型为string，所以对于“数”需要转化为float型，对于操作符，则要进行数字运算。笔者分别运用内置函数stof()和辅助函数calc\_op()解决以上问题。这里同样利用了stack来实现，从左到右遍历后续储存后缀表达式的vector，遇到数字放入一个栈中，遇到操作符则弹出两个数进行运算再将运算结果压入栈，直到栈中只有一个数，即为结果。
+
+具体代码如下：
+\begin{lstlisting}[language=C++, caption={calc\_op() \& calculate()}]
+inline void calc_op(float &x1,float &x2,string &op,stack<float> &stk, int &flag)
+{
+    switch (op[0])
+    {
+    case '+':
+        stk.push(x1 + x2);
+        break;
+    case '-':
+        stk.push(x1 - x2);
+        break;
+    case '*':
+        stk.push(x1 * x2);
+        break;
+    case '/':
+        if(x2 == 0)
+        {
+            cout << "ILLEGAL" << endl;
+            flag = 0;
+        }
+        else stk.push(x1 / x2);
+        break;
+    }
+}
+
+/**
+ * 计算后缀表达式
+ */
+inline void calculate(vector<string> &suffix,int &flag)
+{
+    stack<float> calc_stk;
+
+    //cout << "Step 4" << endl;
+    
+    for(int i = 0 ; i < suffix.size(); ++i)
+    {
+        if(flag == 0) break;
+
+        if(type(suffix[i][0]) == 0)
+        {
+            float right = calc_stk.top();
+            calc_stk.pop();
+            float left = calc_stk.top();
+            calc_stk.pop();
+            calc_op(left,right,suffix[i],calc_stk,flag);
+            continue;
+        } 
+        else
+        {
+            calc_stk.push(stof(suffix[i]));
+        }
+    }
+
+    //cout << flag << endl;
+    if (flag == 1)
+    {
+        float result = calc_stk.top();
+        cout << result << endl; 
+    }
+}
+\end{lstlisting}
+
+\subsection{主函数}
+到此四则运算的给个步骤已经逐步完成,笔者在main.cpp中整合以上函数于一个函数calculator中,其中设立了flag来作为标志，其中有一步输出"ILLEGAL"就没必要进行下一步了，这样提高了效率。
+
+具体代码如下：
+\begin{lstlisting}[language=C++,caption={Calculator()}]
+    void calculator(string &input)
+    {
+        int flag = 1;
+        vector<string> expressor;
+        vector<string> suffix;
+    
+        split(expressor,input);
+    
+        check_expressor(expressor,flag);
+    
+        if(flag) //表达式正确
+        {
+            suffix = suffixexpressor(expressor);        
+            calculate(suffix , flag);
+        }
+        else return;    
+    }
+
+    int main() {
+    string str;
+    cin >> str;
+    calculator(str);
+}
+
+\end{lstlisting}
+\textbf{Remark:}到了整个项目的代码实现已经完成，但是为了方便测试，笔者在这里对主函数进行了修改。笔者讲测试的数据分行写入一个".txt"文件，然后逐行读取表达式进行测试，而原来的设计是运行一次，输入一次。因此在上传的文件的代码有所不同。
+
+\section{项目测试}
+\subsection{测试数据集的构建}
+具体点数据集已经写入.txt文件，在这一部分主要展示构建测试数据的几个角度和方法。其实表达式是有数和符合的组合，从数的角度，数有三个角度：1，正负数 2，小数与整数 3，普通表示和科学计数法表示。对于符号从本质上讲就是优先级的问题。
+一下将分类枚举一些例子(例子中为提高阅读性，字符间有空格，实际项目不支持运算中有空格)：
+\subsubsection*{1. 基础四则运算}
+\textbf{合法表达式：}
+\begin{itemize}
+  \item 3 + 5
+  \item 10 - 2
+  \item 4 * 3
+  \item 8 / 2
+  \item 9 + 3 * 2
+  \item 10 - 5 * 2
+  \item (10 + 2) / 2 + 3
+  \item 1 + -1
+  \item 1 * -2
+  \item -2 * 3
+  \item 0 / 3
+\end{itemize}
+
+\textbf{非法表达式：}
+\begin{itemize}
+  \item 3 + + 5 \quad (运算符连续)
+  \item \% 2 - 1 \quad (非法运算符)
+  \item 10 // 2 \quad (非法运算符)
+  \item 4 * (2 + 3 \quad (括号不匹配)
+  \item 3 * + 2 \quad (运算符不当位置)
+  \item + 1 / 2 \quad (运算符不当位置)
+  \item 3 / 2 + 3 - \quad (运算符不当位置)
+\end{itemize}
+
+\subsubsection*{2. 浮点数运算}
+
+\textbf{合法表达式：}
+\begin{itemize}
+  \item  3.5 + 2.1 
+  \item  5.1 - 2.5 
+  \item  3.6 * 2.2 
+  \item  7.5 * 2.5 
+  \item  -3.2 + 4.5 * 2 
+  \item  5.0 * (2.2 + -1.1) 
+\end{itemize}
+
+\textbf{非法表达式：}
+\begin{itemize}
+  \item  5.1.2 + 3  \quad (数字格式不正确)
+  \item  1. + 2  \quad (缺少小数部分)
+  \item  3 + .5  \quad (缺少整数部分)
+  \item  . + 1
+\end{itemize}
+
+\subsubsection*{3. 负数运算}
+
+\textbf{合法表达式：}
+\begin{itemize}
+  \item -(5+1)
+  \item -(5+-3)
+  \item 1 + (-1.0)
+  \item 1+-1
+  \item 1--1
+  \item 1*-1
+  \item 1/-1
+\end{itemize}
+
+
+\subsubsection*{4. 括号使用}
+
+\textbf{合法表达式：}
+\begin{itemize}
+  \item  (2 + 3) * 5.0
+  \item  (3 + (2 * 5)) - 3 
+  \item  (-4 + 2) * 3 / 2
+  \item  ((3 + 2) * (5 + 6)) - (2 * (3 -  -1))
+  \item  3 + (5 - (2 * 2)) 
+\end{itemize}
+
+\textbf{非法表达式：}
+\begin{itemize}
+  \item  (3 + 2 * 5  \quad (括号不匹配)
+  \item  3 + ((2 - 3)))))  \quad (括号过多或不匹配)
+  \item  (((3 + 2)+ 1)+ 1  \quad (括号过多或不匹配)
+  \item  2-)2/3(
+  \item  ()+1
+  \item  1(2 + 3)/ 2
+\end{itemize}
+
+\subsubsection*{5. 除法与除数为0}
+
+\textbf{非法表达式：}
+\begin{itemize}
+  \item  3 / 0  \quad (除数为零)
+  \item  5 / (1 - 1) \quad (除数为零)
+\end{itemize}
+
+\subsubsection*{6. 科学计数法}
+
+\textbf{合法表达式：}
+\begin{itemize}
+  \item  1e3 + 5 
+  \item  1.0E3 + 5
+  \item  3e2 - 5 
+  \item  3.2E2 - 5
+  \item  4e+2 * 10
+  \item  4.2E+2 * 10
+  \item  1.2e-2 / 3
+  \item  1.2E-2 / 3 
+  \item  -1e2 - 1
+  \item  (1e-1 / 2E-2) * 3 
+\end{itemize}
+
+\textbf{非法表达式：}
+\begin{itemize}
+  \item  3.2e*2  \quad (e 后无整数)
+  \item  e3 + 5  \quad (缺少数字部分)
+  \item  3.1E2.2 -1 \quad (E后为小数)
+\end{itemize}
+以上只举出部分例子，详细测试数据在"expressions.txt"文件中，直接运行程序，可以看到对应的表达式及其相应结果。值得注意的是，当一个非法表达式出现多种错误时，它可能被在同一个步骤里报错多次，分别对应不同的错误类型，但不会进入下一个步骤。笔者对每个错误类型增加了后缀，
+可以对照后缀找到判断的依据。
+
+\end{document}

@@ -1,0 +1,308 @@
+\documentclass[fontset=fandol]{ctexart}  
+
+\usepackage{geometry}  
+\geometry{margin=1.5cm, vmargin={0pt,1cm}}  
+\setlength{\topmargin}{-1cm}  
+\setlength{\paperheight}{29.7cm}  
+\setlength{\textheight}{25.3cm}  
+  
+\usepackage{xcolor}  % 使用 xcolor 而非 color  
+\usepackage{listings}  
+  
+% 设置代码样式  
+\lstset{  
+    basicstyle=\ttfamily\small,  
+    keywordstyle=\color{black},  
+    commentstyle=\color{gray},  
+    stringstyle=\color{red},  
+    numbers=left,  
+    numberstyle=\tiny\color{gray},  
+    stepnumber=1,  
+    numbersep=10pt,  
+    backgroundcolor=\color{white},  
+    showspaces=false,  
+    showstringspaces=false,  
+    frame=single,  
+    rulecolor=\color{black},  
+    tabsize=4,  
+    captionpos=b,  
+    breaklines=true,  
+    breakatwhitespace=false,  
+    escapeinside={(*@}{@*)}  % 更改逃逸字符设置  
+}  
+% 在hyperref包选项中添加unicode=true
+\usepackage[colorlinks=true, linkcolor=blue, citecolor=blue, urlcolor=blue, 
+            bookmarks=true, unicode=true]{hyperref}
+% 在hyperref之后加载bookmark包
+\usepackage{bookmark}
+
+\title{BST\_remove的改善}
+\author{汉铮 陈}
+\date{\today}
+
+\begin{document}
+
+\maketitle
+
+\section{remove函数的完善}
+这与部分主要分为三个主要内容：辅助函数 detachMin( BinaryNode* \&t)的构造、
+remove(const Comparable \&x, BinaryNode * \&t)函数的完善、树的简单可视化打印drawTree(BinaryNode* t ,int space , bool isLeft)的实现。
+以下将上述函分别简写为 detachMin() 、remove() 、 drawTree()
+
+\subsection{detchMin()函数的构造}
+在这里构造辅助函数detachMin()的主要作用就是查找以 t 为根的子树中的最小节点，返回这个节点，并从原子树中删除这个节点。显然，当要删除的节点具有两个子树时，通过这个函数返回的右子树最小节点将代替被删除节点。\par
+该函数实现的基本原理与findMin()函数类似，只需要需要利用递归的方法找到右子树的最小节点，并构造一个临时节点记住该节点的值以及指针，最后把最小节点删掉即可。具体代码如下：
+
+\begin{lstlisting}[language=C++, caption={detachMin()函数}]  
+/**
+ * @brief 查找以 t 为根的子树中的最小节点，返回这个节点，并从原子树中删除这个节点
+ * @param t 当前节点指针
+ * @return 以t 为根的子树中的最小节点
+ */
+BinaryNode* detachMin(BinaryNode *&t)
+{
+    if(!t) return nullptr;
+
+    if(!t ->left)//判断是否为叶子节点
+    {
+        BinaryNode* minNode = t;
+        t = t->right;
+        return minNode; 
+    }
+    else
+    {
+        return detachMin(t -> left);
+    }
+}
+\end{lstlisting}
+
+而findMin()函数的代码如下：
+\begin{lstlisting}[language=C++, caption={findMin()函数}]  
+BinaryNode *findMin(BinaryNode *t) const {
+    /// 从一个空节点开始查找，返回空指针                
+    if (t == nullptr) 
+    {
+        return nullptr;
+    }
+    /// 向左无路了，当前节点就是最小元素
+    if (t->left == nullptr) 
+    {
+        return t;
+    }
+    /// 否则继续向左查找
+    return findMin(t->left);
+}
+\end{lstlisting}
+
+\subsection{remove()函数的完善}
+要通过移动节点的方式实现remove操作总体分为四步：1.找到要删除的节点 cur 和它的父节点 par; 2.找到 cur的右子树中的最小值节点 min ,并将其断开 ; 3.将 min的左子树和右子树分别链接到 cur 的左子树和右子树；4.将 par的指针指向 min，然后删除 cur。具体代码如下：
+\begin{lstlisting}[language=C++, caption={remove()函数}]  
+void remove(const Comparable &x, BinaryNode * &t) 
+{
+    if(!t) return;//如果t为空节点
+
+    BinaryNode* par = nullptr;
+    BinaryNode* cur = t;
+    while(cur && cur -> element != x )//找到值为x的节点以及其parent节点，注意条件顺序
+    {
+        par =cur;
+        if(cur -> element < x )
+        {
+            cur = cur->right;
+        }else if(cur -> element > x)
+        {
+            cur = cur->left;
+        }
+    }
+
+    if(!cur) return;//x没有被找到
+
+    if(!(cur ->left) || !(cur -> right))//要删除的节点至多只有一个child节点
+    {
+        if(!par)//如果删除根节点
+        {
+            t = (cur -> left)? cur->left : cur->right;//修改根节点
+        }
+        if(par -> left == cur)//t是par的左节点
+        {
+            par -> left = (cur -> left)? cur->left : cur->right;
+        }else
+        {
+            par -> right = (cur -> left)? cur->left : cur->right;
+        }
+        delete cur;
+    }else//有两个child节点
+    {
+        BinaryNode* min = detachMin(cur->right);
+
+        min -> left = cur -> left;// 将当前节点的左子树链接到后继节点
+        min -> right = cur -> right;// 将当前节点的右子树链接到后继节点
+        if(!par)//如果删除根节点
+        {
+            t = min;//修改根节点
+        }
+        else if(par -> left == t)//t是par的左节点
+        {
+            par -> left = min;// 父节点指向后继节点
+        }else//t是右节点
+        {
+            par -> right = min;// 父节点指向后继节点
+        }
+        delete cur;
+    }
+}
+\end{lstlisting}
+
+
+\subsection{树的可视化实现}
+在这里构造drawTree()函数主要是为了，便于直观的观察和跟踪remove()函数操作后的结果，这里打印的树的节点是纵向排列的。具体代码如下：
+\begin{lstlisting}[language=C++, caption={draw()函数}]  
+void drawTree(BinaryNode* node, int space , bool isLeft) {
+    if (!node) return;
+
+    space += 10; // 增加空间以便于显示
+
+    // 先打印右子树
+    drawTree(node->right, space , false);
+
+    // 打印当前节点
+    std::cout << std::endl;
+    for (int i = 10; i < space; i++) {
+        std::cout << ' '; // 输出空格
+    }
+
+    if (isLeft) {
+        std::cout << " \\"; // 左子树的枝
+    } else if (space > 10) {
+        std::cout << " / "; // 右子树的枝
+    }
+
+    std::cout << " " << node->element << "\n"; // 打印节点值
+
+    // 打印左子树
+    drawTree(node->left, space , true);
+}
+\end{lstlisting}
+
+
+
+
+
+\section{测试程序的设计}
+这部分主要设计的是test.cpp部分，验证remove()函数的正确性。\par
+首先构造一个BST：
+\begin{lstlisting}[language=C++, caption={testBinarySearchTree()测试函数}]  
+#include <iostream>
+#include "BST.h"  // 假设 BinarySearchTree 类定义在这个头文件中
+using namespace std;
+
+int main() {
+    BinarySearchTree<int> bst;
+
+    // 测试插入功能
+    bst.insert(50);
+    bst.insert(30);
+    bst.insert(70);
+    bst.insert(20);
+    bst.insert(40);
+    bst.insert(60);
+    bst.insert(80);
+
+    std::cout << "before any deletions: ";
+    bst.drawTree();
+
+    // 删除叶子节点
+    cout << "\nDeleting leaf node (20): ";
+    bst.remove(20);
+    bst.drawTree();
+
+    // 删除只有一个子节点的节点
+    cout << "\nDeleting node with one child (30): ";
+    bst.remove(30);
+    bst.drawTree();
+
+    // 删除具有两个子节点的节点
+    cout << "\nDeleting node with two children (50): ";
+    bst.remove(50);
+    bst.drawTree();
+
+    cout<<endl;
+    // 测试清空树
+    bst.makeEmpty();
+    cout << "Tree after making empty:" << std::endl;
+    bst.printTree();
+
+    return 0;
+}
+\end{lstlisting}
+构造树的输出结果如下：
+\begin{verbatim}  
+before any deletions: 
+                     /  80
+
+           /  70
+
+                     \ 60
+
+ 50
+
+                     /  40
+
+           \ 30
+
+                     \ 20
+
+\end{verbatim}
+
+删除叶子节点后的树形状为：
+\begin{verbatim}  
+Deleting leaf node (20): 
+                     /  80
+
+           /  70
+
+                     \ 60
+
+ 50
+
+                     /  40
+
+           \ 30
+\end{verbatim}
+删除只有一个子节点的节点后，树的形状为：
+\begin{verbatim}  
+Deleting node with one child (30): 
+                     /  80
+
+           /  70
+
+                     \ 60
+
+ 50
+
+           \ 40
+\end{verbatim}
+删除具有两个子节点的节点（这里是root）后,树的形状为：
+\begin{verbatim}  
+Deleting node with two children (50): 
+                     /  80
+
+           /  70
+
+ 60
+
+           \ 40
+\end{verbatim}
+最后清空树：
+\begin{verbatim}  
+Tree after making empty:
+Empty tree
+\end{verbatim}
+
+至此测试程序设计结束，笔者输入的指令为"g++ -fsanitize=address -fno-omit-frame-pointer -g -std=c++17 test\_BST.cpp -o test"利用AddressSanitizer检查是否存在内存泄漏。如果不存在，则没有任何显示。
+
+欢迎批评指正
+
+\end{document}
+
+
